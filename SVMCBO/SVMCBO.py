@@ -15,7 +15,7 @@ class SVMCBO():
     def __init__(self, f, bounds=[[0, 1], [0, 1]], n_init=10,
                  iter_phase1=60, iter_phase2=30,
                  surrogate="GP", GP_kernel="RBF", kernel_kwargs={},
-                 sampler='lhs', sampler_kwargs={},
+                 sampler='lhs', sampler_kwargs={}, log_models=False,
                  noise=None, gamma=0.1, classifier=SVC, seed=42):
         self.noise, self.classifier = noise, classifier
         self.gamma, self.gamma_svm = gamma, "scale"
@@ -24,12 +24,11 @@ class SVMCBO():
         self.labels, self.n_init = [], n_init
         self.iter_phase1 = iter_phase1
         self.iter_phase2 = iter_phase2
-        self.surrogate_type = surrogate
-        self.surrogates = list()
+        self.surrogate_type = surrogate.lower()
         self.bounds, self.f = np.array(bounds, dtype=float), f
-        self.classifiers = list()
-        self.score_svm = list()
-        self.seed = seed
+        if log_models: self.surrogates, self.classifiers = list(), list()
+        self.log_models = log_models
+        self.score_svm, self.seed = list(), seed
         sampler = sampler.lower()
         if sampler not in ["sobol", "lhs"]: raise ValueError("Unknown sampler '"+sampler+"'!")
         sampler_opt = sampler_settings[sampler]
@@ -69,16 +68,15 @@ class SVMCBO():
     def phase1(self):
         print(self.gamma)
         self.gamma = 1/(2*np.var(self.x_tot))
-        svm = estimateFeasibleRegion(self.x_tot, self.labels, self.gamma)
-        score_svm = svm.score(self.x_tot, self.labels)
+        svm_model = estimateFeasibleRegion(self.x_tot, self.labels, self.gamma)
+        score_svm = svm_model.score(self.x_tot, self.labels)
         self.score_svm.append(score_svm)
         print('*'*70)
         print("> Score SVM: {}".format(score_svm))
         print('*'*70)
-        self.classifiers.append(svm)
-        print(svm.predict(self.x_tot))
+        if self.log_models: self.classifiers.append(svm_model)
+        print(svm_model.predict(self.x_tot))
         print(self.labels)
-        self.classifier = svm
 
         print("Start phase 1!!!")
         for i in np.arange(0, self.iter_phase1):
@@ -86,8 +84,8 @@ class SVMCBO():
             print("Iteration", i, "in phase 1... (feasible points:", len(self.y_feasible), ")")
             print("[Current best value: ", np.min(self.y_feasible),"]")
             print("Computing the new point...")
-            x_new = nextPointPhase1(sampledPoints=self.x_tot, svm=self.classifiers[i], gamma=np.var(self.x_tot),
-                                    dimensions_test=self.bounds)
+            x_new = nextPointPhase1(sampledPoints=self.x_tot, svm=svm_model, gamma=np.var(self.x_tot),
+                                    sampler=self.sampler, dimensions_test=self.bounds)
             print("Updating the design...")
             self.x_tot = self.x_tot + x_new.tolist()
             # labels = evaluateEstimatedFeasibility(x, svm)
@@ -108,65 +106,56 @@ class SVMCBO():
 
             print("Updating the estimated feasible region...")
             self.gamma = 1 / (2 * np.var(self.x_tot))
-            svm = estimateFeasibleRegion(self.x_tot, self.labels, self.gamma)
-            score_svm = svm.score(self.x_tot, self.labels)
+            svm_model = estimateFeasibleRegion(self.x_tot, self.labels, self.gamma)
+            score_svm = svm_model.score(self.x_tot, self.labels)
             print("> Score SVM: {}".format(score_svm))
             print('*' * 70)
             self.score_svm.append(score_svm)
-            self.classifiers.append(svm)
+            if self.log_models: self.classifiers.append(svm_model)
         self.x_feasible = np.array(self.x_tot)[np.where(self.labels == 0)[0],].tolist()
-
+        self.classifier = svm_model
+    
     def phase2(self):
         """
         Run Bayesian optimization with on-the-fly updates of SVM estimator for feasible region.
         """
         warnings.filterwarnings("ignore")
+        if self.surrogate_type == "gp":
+            surrogate_model = GaussianProcessRegressor(self.kernel)
+        elif self.surrogate_type == "rf":
+            surrogate_model = RandomForestRegressor()
+        else:
+            surrogate_model = ExtraTreesRegressor()
+        svm_model = self.classifier
         for iter_bo in np.arange(0, self.iter_phase2):
             print('*' * 70)
             print("> Iteration {} in phase 2... (feasible points: {})".format(iter_bo, len(self.y_feasible)))
             print("[Current best value: ", np.min(self.y_feasible),"]")
             x_, y_ = self.x_feasible, self.y_feasible
-
-            svm_model = self.classifiers[-1]
-            if self.surrogate_type == "GP":
-                surrogate_model = GaussianProcessRegressor(self.kernel)
-            elif self.surrogate_type == "RF":
-                surrogate_model = RandomForestRegressor()
-            else:
-                surrogate_model = ExtraTreesRegressor()
-
             surrogate_model.fit(x_, y_)
-            self.surrogates.append(surrogate_model)
-            params = {'model': surrogate_model, 'classifier': svm_model, 'bounds': self.bounds, 'n_sampling': 10000}
+            params = {'model':surrogate_model, 'classifier':svm_model, 'bounds':self.bounds, 'n_sampling':10000}
             next_x = focus_search_parallel(f=acquisition_function, args=params)
             value = self.f(next_x)
             print("f({}) = {}".format(next_x, value))
-            if np.isnan(value):
-                new_label = 1
-            else:
-                new_label = 0
+            new_label = 1 if np.isnan(value) else 0
             ### Add classification label new point
-            # x = np.concatenate((x, np.array([next_x])))
             self.x_tot = self.x_tot + [next_x.tolist()]
             self.labels = np.concatenate((self.labels, np.array([new_label])))
-
+            
             ### Update surrogate model in case unfeasible point sampled!
             if np.isnan(value):
                 print("**** Retraining bounds! ***")
                 self.gamma = 1 / (2 * np.var(self.x_tot))
-                svm = estimateFeasibleRegion(self.x_tot, self.labels,self.gamma)
-                score_svm = svm.score(self.x_tot, self.labels)
-                print("> Score SVM: {}".format(score_svm))
-                self.score_svm.append(score_svm)
-                self.classifiers.append(svm)
+                svm_model = estimateFeasibleRegion(self.x_tot, self.labels, self.gamma)
             else:
-                self.classifiers.append(self.classifiers[-1])  # continuo ad appendere svm migliore!
-                score_svm = self.classifiers[-1].score(self.x_tot, self.labels)
-                print("> Score SVM: {}".format(score_svm))
-                self.score_svm.append(score_svm)
-                # y = np.concatenate((y, np.array([value])))
                 self.y_feasible = self.y_feasible + [value]
                 self.x_feasible = self.x_feasible + [next_x.tolist()]
+            score_svm = svm_model.score(self.x_tot, self.labels)
+            print("> Score SVM: {}".format(score_svm))
+            self.score_svm.append(score_svm)
+            if self.log_models:
+                self.surrogates.append(surrogate_model)
+                self.classifiers.append(svm_model)
             print('*' * 70)
             self.y_tot = self.y_tot + [value]
 
