@@ -1,13 +1,14 @@
 # Created by ricky at 15/12/2019
+# Modified by Martin at 03/10/2023
 
 import numpy as np
 import scipy as spy
 from joblib import Parallel, delayed
-from pyDOE2 import lhs
+from sklearn.svm import SVC
+#from pyDOE2 import lhs
 import warnings
 
 def estimateFeasibleRegion(x,y, gamma):
-    from sklearn.svm import SVC
     svm_model = SVC(gamma=gamma)
     svm_model.fit(x, y)
     return svm_model
@@ -40,7 +41,6 @@ def svmSurface(x,svm):
     return f
 
 def phase1AcquisitionFunction(x, args):
-
     sampledPoints = args["sampledPoints"]
     svm = args["svm"]
     gamma = args["gamma"]
@@ -49,31 +49,13 @@ def phase1AcquisitionFunction(x, args):
     value = C+B
     return value
 
-def nextPointPhase1(sampledPoints, svm, gamma, dimensions_test):
-
-    nStartingPoints = 30
-    #xlimits = np.array(dimensions_test)
-    startingPoints = lhs(len(dimensions_test), nStartingPoints)
-    additional = {'sampledPoints': sampledPoints, 'svm': svm, 'gamma': gamma} # optional parameters for minimization scipy
-    locOptX = list()
-    locOptY = list()
-
-    # for i in np.arange(0,nStartingPoints):
-    #     #print("----", i, "----")
-    #     #print("Starting point:",startingPoints[i,])
-    #     ## Dovrebbero tornare un valore di funzione e il sample x migliore da valutare..
-    #     opt = spy.optimize.minimize(fun=phase1AcquisitionFunction,
-    #                                 args=additional,
-    #                                 x0=startingPoints[i,],
-    #                                 bounds=dimensions_test,#((-1.5, 1.5),(-0.5,2.5)),
-    #                                 method='L-BFGS-B'#method='BFGS'#method='Nelder-Mead'
-    #                                 )
-    #     locOptX = locOptX + [opt.x]
-    #     locOptY = locOptY + [phase1AcquisitionFunction(opt.x, additional)]
-    #     #print(locOptY[-1])
-    # ix = np.where(np.array(locOptY) == np.min(np.array(locOptY)))[0][0]
-    #
-    # print(ix)
+def nextPointPhase1(sampledPoints, svm, gamma, sampler, dimensions_test):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        startingPoints = np.array(sampler.generate(dimensions_test, 32))
+    # optional parameters for minimization scipy
+    additional = {'sampledPoints':sampledPoints, 'svm':svm, 'gamma':gamma}
+    locOptX, locOptY = list(), list()
 
     ##TODO: avoid hard-coded parallelism
     results = Parallel(6)(
@@ -98,14 +80,12 @@ def nextPointPhase1(sampledPoints, svm, gamma, dimensions_test):
 def acquisition_function(x, args, beta=1.96):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-
         model = args["model"]
         classifier = args["classifier"]
         mu, std = model.predict(x, return_std=True)
         labels = classifier.predict(x)
         label_neg = np.where(labels == 1)[0]
         label_pos = np.where(labels == 0)[0]
-        #print("* Punti PREDETTI 'feasible:' {} su un totale di {}".format(len(label_pos), len(x)))
         mu[label_neg] = np.max(mu)
         lcb = mu - beta * std
         return lcb
