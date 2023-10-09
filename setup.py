@@ -9,7 +9,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 
 setup(
-    name='SVMCBO',
+    name='MLCBO',
     author='Martin Stoehr',
     author_email='martin.stoehr.research@gmail.com',
     # Versions should comply with PEP440.  For a discussion on single-sourcing
@@ -17,11 +17,11 @@ setup(
     # https://packaging.python.org/en/latest/single_source_version.html
     version='0.22.1',
 
-    description='Utility suite for PYSEQM.',
+    description='Python package for machine learning-constrained Bayesian optimization.',
     long_description=long_description,
     
     # The project's main homepage.
-    url='https://github.com/martin-stoehr/SVMCBO',
+    url='https://github.com/martin-stoehr/MLCBO',
 
     # Choose your license
 #    license='',
