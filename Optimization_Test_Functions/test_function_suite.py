@@ -429,5 +429,5 @@ minimum = {
     'gomez_levi_c':np.array([0.08984201, -0.7126564]),
           }
 
-def get_minimum(func_name):
-    return minimum.get(func_name)
+def get_minimum(func_name): return minimum.get(func_name)
+
