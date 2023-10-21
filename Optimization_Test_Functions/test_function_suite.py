@@ -391,24 +391,182 @@ def gomez_levi_c(x):
     else:
         return np.nan
 
+def six_hump_camel(x):
+    maxx = np.array([ 3.0,  2.0])
+    minn = np.array([-3.0, -2.0])
+    x = x * (maxx-minn) + minn
+    x1 = x[0]
+    x2 = x[1]
+    return x1*x1*(4 - 2.1*x1*x1 + x1**4/3) + x1*x2 + 4*x2*x2*(x2*x2 - 1)
+
+def drop_wave(x):
+    maxx = np.array([ 2.0,  2.0])
+    minn = np.array([-2.0, -2.0])
+    x = x * (maxx-minn) + minn
+    x1 = x[0]
+    x2 = x[1]
+    return 1. - (1 + np.cos(12.* np.sqrt(x1*x1 + x2*x2))) / (0.5*(x1*x1 + x2*x2) + 2.)
+    
+def drop_wave_c(x, lim=0.9):
+    maxx = np.array([ 2.0,  2.0])
+    minn = np.array([-2.0, -2.0])
+    x = x * (maxx-minn) + minn
+    x1 = x[0]
+    x2 = x[1]
+    y = 1. - (1 + np.cos(12.* np.sqrt(x1*x1 + x2*x2))) / (0.5*(x1*x1 + x2*x2) + 2.)
+    if y < lim: return y
+    return np.nan
+
+def ackley(x, a=20., b=.2, c=2*np.pi, dim=2):
+    maxx = np.array([ 32.768,]*dim)
+    minn = np.array([-32.768,]*dim)
+    x = x * (maxx-minn) + minn
+    rms = np.sqrt(np.mean(x*x))
+    mcos = np.mean(np.cos(c*x))
+    y = a + np.exp(1) - a*np.exp(-b*rms) - np.exp(mcos)
+    return y
+
+def ackley_ellipse(x, a=20., b=.2, c=2*np.pi, lengths=None, dim=2):
+    if lengths is None: lengths = np.random.random(dim)*0.8 + 0.2
+    in_ellipse = np.sum((x/lengths)**2) < 1
+    if in_ellipse: return ackley(x, a=a, b=b, c=c, dim=dim)
+    return np.nan
+
+def hartmann_3d(x):
+    maxx = np.array([1., 1., 1.])
+    minn = np.array([0., 0., 0.])
+    x = x * (maxx-minn) + minn
+    alpha = np.array([1., 1.2, 3., 3.2])
+    A = np.array([[3.0, 10., 30.],
+                  [0.1, 10., 35.],
+                  [3.0, 10., 30.],
+                  [0.1, 10., 35.]])
+    P = np.array([[3689., 1170., 2673.],
+                  [4699., 4387., 7470.],
+                  [1091., 8732., 5547.],
+                  [ 381., 5743., 8828.]])*1e-4
+    y = 3.86278
+    for i in range(4):
+        expon = 0.
+        for j,xj in enumerate(x): expon -= A[i,j]*(xj - P[i,j])**2
+        y -= alpha[i] * np.exp(expon)
+    return y
+
+def powell_singular(x):
+    maxx = np.array([ 5.,  5.,  5.,  5.])
+    minn = np.array([-4., -4., -4., -4.])
+    x = x * (maxx-minn) + minn
+    y = (x[0] + 10.*x[1])**2 + 5*(x[2] - x[3])**2 + (x[1] - 2*x[2])**4 + 10.*(x[0] - x[3])**4
+    return y
+
+def colville(x):
+    maxx = np.array([ 10.,  10.,  10.,  10.])
+    minn = np.array([-10., -10., -10., -10.])
+    x = x * (maxx-minn) + minn
+    y  = 100.*(x[0]**2 - x[1])**2 + (x[0] - 1.)**2 + (x[2] - 1.)**2 + 90.*(x[2]**2 - x[3])**2
+    y += 10.1*( (x[1] - 1.)**2 + (x[3] - 1.)**2 ) + 19.8*(x[1] - 1.)*(x[3] - 1.)
+    return y
+
+def shekel(x):
+    maxx = np.array([10., 10., 10., 10.])
+    minn = np.array([0.0, 0.0, 0.0, 0.0])
+    x = x * (maxx-minn) + minn
+    bt = np.array([1., 2., 2., 4., 4., 6., 3., 7., 5., 5.])/10.
+    C = np.array([[4., 1., 8., 6., 3., 2., 5., 8., 6., 7.0],
+                  [4., 1., 8., 6., 7., 9., 3., 1., 2., 3.6],
+                  [4., 1., 8., 6., 3., 2., 5., 8., 6., 7.0],
+                  [4., 1., 8., 6., 7., 9., 3., 1., 2., 3.6]])
+    y = 10.5364
+    for i in range(10):
+        for j,xj in enumerate(x): y -= 1. / ( (xj - C[j,i])**2 + bt[i] )
+    return y
+
+def hartmann_6d(x):
+    maxx = np.array([1.,]*6)
+    minn = np.array([0.,]*6)
+    x = x * (maxx-minn) + minn
+    alpha = np.array([1., 1.2, 3., 3.2])
+    A = np.array([[10.0, 3.0, 17.0, 3.5, 1.7, 8.0],
+                  [0.05, 10., 17.0, 0.1, 8.0, 14.],
+                  [3.00, 3.5, 1.70, 10., 17., 8.0],
+                  [17.0, 8.0, 0.05, 10., 0.1, 14.]])
+    P = np.array([[1312., 1696., 5569.,  124., 8283., 5886.],
+                  [2329., 4135., 8307., 3736., 1004., 9991.],
+                  [2348., 1451., 3522., 2883., 3047., 6650.],
+                  [4047., 8828., 8732., 5743., 1091.,  381.]])*1e-4
+    y = 3.32237
+    for i in range(4):
+        expon = 0.
+        for j,xj in enumerate(x): expon -= A[i,j]*(xj - P[i,j])**2
+        y -= alpha[i] * np.exp(expon)
+    return y
+
+def tension_compression(x):
+    """ From Kumar et al. Swarm and Evolutionary Computation 56, 100693 (2020). """
+    maxx = np.array([2.00, 1.30, 15.0])
+    minn = np.array([0.05, 0.25, 2.00])
+    x = x * (maxx-minn) + minn
+    x1, x2, x3 = x
+    c1 = x2**3 * x3 / (71785*x1**4) < 1.
+    c2 = x2*(4*x2 - x1) / (12566*x1**3(x2 - x1)) + 1. / (5108*x1**2) > 1.
+    c3 = 140.45*x1 / (x2*x2*x3) < 1.
+    c4 = (x1 + x2)/1.5 > 1.
+    if any((c1,c2,c3,c4)): return np.nan
+    return x1*x1*x2*(2. + x3)
+
+
+def gas_compressor(x):
+    """ From Kumar et al. Swarm and Evolutionary Computation 56, 100693 (2020). """
+    maxx = np.array([50., 10., 50., 60.])
+    minn = np.array([20., 1.0, 20., 0.1])
+    x = x * (maxx-minn) + minn
+    x1, x2, x3, x4 = x
+    c = (x4 + 1.)/x2**2 > 1
+    if c: return np.nan
+    return 8.61e5 * np.sqrt(x1) * x2 / x3**(2/3) / np.sqrt(x4) + 3.69e4 * x3 + (7.72e8 * x2**0.219 - 765.43e6) / x1
+
+
 
 search_domain = {
-    'rosenbrock':        np.array([[-1.5, 1.5], [-0.5, 2.5]]),
-    'rosenbrock_fun_c_1':np.array([[-1.5, 1.5], [-0.5, 2.5]]),
-    'rosenbrock_fun_c_2':np.array([[-1.5, 1.5], [-0.5, 2.5]]),
-    'michalewicz':       np.array([[0., np.pi], [0., np.pi]]),
-    'michalewicz_c':     np.array([[0., np.pi], [0., np.pi]]),
-    'mishra_bird':       np.array([[-10.,  0.], [-6.5,  0.]]),
-    'mishra_bird_c':     np.array([[-10.,  0.], [-6.5,  0.]]),
-    'mishra_bird_c_disc':np.array([[-10.,  0.], [-6.5,  0.]]),
-    'alpine2':           np.array([[  0., 10.], [  0., 10.]]),
-    'alpine2_c':         np.array([[  0., 10.], [  0., 10.]]),
-    'alpine2_c_disc':    np.array([[  0., 10.], [  0., 10.]]),
-    'gomez_levi':        np.array([[ -1.,  1.], [ -1.,  1.]]),
-    'gomez_levi_c':      np.array([[ -1.,  1.], [ -1.,  1.]]),
-                }
+    'rosenbrock':          np.array([[-1.5, 1.5], [-0.5, 2.5]]),
+    'rosenbrock_fun_c_1':  np.array([[-1.5, 1.5], [-0.5, 2.5]]),
+    'rosenbrock_fun_c_2':  np.array([[-1.5, 1.5], [-0.5, 2.5]]),
+    'michalewicz':         np.array([[0., np.pi], [0., np.pi]]),
+    'michalewicz_c':       np.array([[0., np.pi], [0., np.pi]]),
+    'mishra_bird':         np.array([[-10.,  0.], [-6.5,  0.]]),
+    'mishra_bird_c':       np.array([[-10.,  0.], [-6.5,  0.]]),
+    'mishra_bird_c_disc':  np.array([[-10.,  0.], [-6.5,  0.]]),
+    'alpine2':             np.array([[  0., 10.], [  0., 10.]]),
+    'alpine2_c':           np.array([[  0., 10.], [  0., 10.]]),
+    'alpine2_c_disc':      np.array([[  0., 10.], [  0., 10.]]),
+    'gomez_levi':          np.array([[ -1.,  1.], [ -1.,  1.]]),
+    'gomez_levi_c':        np.array([[ -1.,  1.], [ -1.,  1.]]),
+    'six_hump_camel':      np.array([[ -3.,  3.], [ -2.,  2.]]),
+    'drop_wave':           np.array([[ -2.,  2.], [ -2.,  2.]]),
+    'drop_wave_c':         np.array([[ -2.,  2.], [ -2.,  2.]]),
+    'ackley':              np.array([[-32.768, 32.768], [-32.768, 32.768]]),
+    'ackley_ellipse':      np.array([[-32.768, 32.768], [-32.768, 32.768]]),
+    'hartmann_3d':         np.array([[0., 1.],]*3),
+    'powell_singular':     np.array([[-4., 5.],]*4),
+    'colville':            np.array([[-10.,10.],]*4),
+    'shekel':              np.array([[0., 10.],]*4),
+    'tension_compression': np.array([[0.05, 2.], [0.25, 1.30], [2., 15.0]]),
+    'hartmann_6d':         np.array([[0., 1.],]*6),
+    'gas_compressor':      np.array([[20., 50.], [1.0, 10.], [20., 50.], [0.1, 60.]]),
+
+            }
+
+def get_dim(func_name):
+    if func_name in ["hartmann_3d", "tension_compression_c"]:
+        return 3
+    elif func_name in ["shekel", "colville", "powell_singular", "gas_compressor"]:
+        return 4
+    elif func_name == "hartmann_6d":
+        return 6
+    return 2
+
 def get_bounds(func_name):
-    return search_domain.get(func_name, [[0.,1.],[0.,1.]])
+    return search_domain.get(func_name, [[0.,1.],]*get_dim(func_name))
 
 def scale_to_domain(x, func_name):
     bounds = get_bounds(func_name)
@@ -427,6 +585,8 @@ minimum = {
     'mishra_bird_c_disc':np.array([-3.1302468,-1.5821422]),
     'gomez_levi':np.array([0.08984201, -0.7126564]),
     'gomez_levi_c':np.array([0.08984201, -0.7126564]),
+    'drop_wave':np.array([0., 0.]),
+    'drop_wave_c':np.array([0., 0.]),
           }
 
 def get_minimum(func_name): return minimum.get(func_name)

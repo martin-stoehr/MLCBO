@@ -1,6 +1,8 @@
 import numpy as np
 import warnings
 from joblib import Parallel, delayed
+from scipy.optimize import minimize
+from .mlcbo_utils import NUMJOBS_OPT
 
 
 def focus_search(f, args, sampler, bounds, n_restart=3, n_focus=5):
@@ -39,18 +41,15 @@ def focus_search(f, args, sampler, bounds, n_restart=3, n_focus=5):
     final_cand_acq = np.min(cand_acq)
     return (final_cand_point, final_cand_acq)
 
-def focus_search_parallel(f, args, sampler, n_restart=3, n_focus=5):
+def focus_search_parallel(f, args, sampler, n_restart=5, n_focus=10):
     bounds = args["bounds"]
     best_x = args.get('best_x', [])
     n_samples = args.get('n_samples', 5000)
-    ##TODO: avoid hard-coded parallelism
-    results = Parallel(6)(
+    ##TODO: avoid hard-coded parallelism -> vectorize
+    results = Parallel(NUMJOBS_OPT)(
                 delayed(focusing)(
-#    for i in range(n_restart):
-#        res = focusing(
                     f, bounds, sampler, n_focus, args,
                     n_samples=n_samples, best_x=best_x)
-#        results.append(res)
                 for i in range(n_restart))
     cand_xs = np.array([r[0] for r in results])
     cand_acqs = np.array([r[1] for r in results])
@@ -78,7 +77,7 @@ def focus_search_parallel(f, args, sampler, n_restart=3, n_focus=5):
             x = x[np.where(labels_cand == 0)]
             values = f(x, args)
             next_x = x[np.argmin(values)]
-    return next_x
+    return next_x.reshape(1,-1)
 
 def focusing(f, bounds, sampler, n_iter, args, n_samples=5000, best_x=[]):
     optimal_point = optimal_value = []
@@ -104,11 +103,30 @@ def focusing(f, bounds, sampler, n_iter, args, n_samples=5000, best_x=[]):
         for i in range(len(bounds)):
             l_xi = np.min(x[:, i])
             u_xi = np.max(x[:, i])
-            new_l_xi = np.max([l_xi, x_star[i] - 0.25 * (u_xi - l_xi)])
-            new_u_xi = np.min([u_xi, x_star[i] + 0.25 * (u_xi - l_xi)])
+            new_l_xi = np.max([l_xi, x_star[i] - 0.5 * (u_xi - l_xi)])
+            new_u_xi = np.min([u_xi, x_star[i] + 0.5 * (u_xi - l_xi)])
             new_bounds = new_bounds + [[new_l_xi, new_u_xi]]
         #print("Shrinked Bounds: {}".format(new_bounds))
     optimal_value = y_star
     optimal_point = x_star
     return optimal_point, optimal_value
+    
+def focus_search_local_opt(f, args, sampler):
+    bounds = args.pop("bounds")
+    n0_opt = args.pop('n_samples', 100)
+    x0_opt = np.array(sampler.generate(bounds, n0_opt))
+    ##TODO: avoid hard-coded parallelism -> vectorize
+    results = Parallel(NUMJOBS_OPT)(
+                delayed(minimize)(
+                    fun=f,
+                    args=args,
+                    x0=x0,
+                    bounds=bounds,
+                    method='L-BFGS-B',
+                    options={'maxiter':20})
+                for x0 in x0_opt)
+    x_opts = np.array([r.get('x') for r in results])
+    y_opts = np.array([r.get('fun') for r in results])
+    next_x = x_opts[np.argmin(y_opts)]
+    return next_x.reshape(1,-1)
 
