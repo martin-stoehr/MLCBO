@@ -218,7 +218,7 @@ class ABCBO(ABC):
             s_model.fit(self.x_feasible, self.y_feasible)
             params = {"model":s_model, "classifier":self.classifier,
                       "bounds":self.bounds, "n_sampling":self.n_init_exploitation,
-                      "max_iter":20}
+                      "max_iter":self.local_opt_maxsteps}
             next_x = self.exploitation_search(f=self.acquisition_func, args=params, sampler=self.sampler)
             value = self.f(next_x[0])
             y_min = min(y_min, value)
@@ -235,7 +235,8 @@ class ABCBO(ABC):
             self.labels = np.append(self.labels, new_label)
             
             ### Update surrogate model every n iterations or if point unfeasible!
-            if np.isnan(value) or (i%self.retrain_classifier_if_feasible == 0):
+            refit_feas = (i%self.retrain_classifier_if_feasible == 0) and (len(np.unique(self.labels)) > 1)
+            if np.isnan(value) or refit_feas:
                 self.gamma = 0.5 / (np.sqrt(self.bounds.shape[0]) * np.var(self.x_tot, axis=0))
                 self.classifier = self.init_classifier()
                 self.classifier.fit(self.x_tot, self.labels)
@@ -346,7 +347,8 @@ class GPCBO(ABCBO):
                  classifier_kernel_kwargs={}, sampler="sobol", sampler_kwargs={},
                  log_models=False, noise=None, seed=42, n_init_exploration=32,
                  n_init_exploitation=32, retrain_classifier_if_feasible=True,
-                 smooth_acquisition=True, local_opt=True, debug=False):
+                 smooth_acquisition=True, local_opt=True, local_opt_maxsteps=20,
+                 debug=False):
         """
         Bayesian Optimization with constraints from Gaussian process classifier.
         
@@ -408,6 +410,8 @@ class GPCBO(ABCBO):
             local_opt: bool, default: True
                 flag for performing exploitation with multi-start local optimization
                 otherwise quasi-random search with focusing
+            local_opt_maxsteps: int, default: 20
+                maximum number of steps in local optimization during exploitation
             debug: bool, default: False
                 flag for more verbose output for each phase
         
@@ -433,6 +437,7 @@ class GPCBO(ABCBO):
             self.acquisition_func = acquisition_function_binary
         if local_opt:
             self.exploitation_search = focus_search_local_opt
+            self.local_opt_maxsteps = local_opt_maxsteps
         else:
             self.exploitation_search = focus_search_parallel
             
@@ -519,6 +524,7 @@ class SVMCBO(ABCBO):
                 n_init_exploitation=n_init_exploitation,
                 retrain_classifier_if_feasible=retrain_classifier_if_feasible,
                 debug=debug)
+        self.local_opt_maxsteps = 1
         self.acquisition_func = acquisition_function_binary
         self.exploitation_search = focus_search_parallel
     

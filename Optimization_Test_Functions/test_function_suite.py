@@ -187,6 +187,18 @@ def dejong5_c(x):
     y = 1 / (0.002 + sum)
     return y
 
+def mishra_bird(x):
+    maxx = np.array([0., 0.])
+    minn = np.array([-10., -6.5])
+    #minn = np.array([-20., -13])
+    x = x * (maxx-minn) + minn
+    x1 = x[0]
+    x2 = x[1]
+    term1 = np.sin(x2)*np.exp((1-np.cos(x1))**2)
+    term2 = np.cos(x1)*np.exp((1-np.sin(x2))**2)
+    term3 = (x1-x2)**2
+    return term1 + term2 + term3 + 106.7645367
+
 def mishra_bird_c(x):
     maxx = np.array([0., 0.])
     minn = np.array([-10., -6.5])
@@ -197,7 +209,7 @@ def mishra_bird_c(x):
     term1 = np.sin(x2)*np.exp((1-np.cos(x1))**2)
     term2 = np.cos(x1)*np.exp((1-np.sin(x2))**2)
     term3 = (x1-x2)**2
-    y = term1 + term2 + term3
+    y = term1 + term2 + term3 + 106.7645367
     if (x1+5)**2 + (x2+5)**2 < 25:
         return y
     else:
@@ -215,7 +227,7 @@ def mishra_bird_c_disc(x, disc_factor=50):
     term1 = np.sin(x2)*np.exp((1-np.cos(x1))**2)
     term2 = np.cos(x1)*np.exp((1-np.sin(x2))**2)
     term3 = (x1-x2)**2
-    y = term1 + term2 + term3
+    y = term1 + term2 + term3 + 106.7645367
     if (x1+5)**2 + (x2+5)**2 < 25:
         return y
     else:
@@ -377,7 +389,7 @@ def gomez_levi(x):
     x = x * (maxx-minn) + minn
     x1 = x[0]
     x2 = x[1]
-    return 4*x1**2 - 2.1*x1**4 + x1**6 / 3 + x1*x2 - 4*x2**2 + 4*x2**4 + 1.031628453
+    return 4*x1**2 - 2.1*x1**4 + x1**6 / 3 + x1*x2 - 4*x2**2 + 4*x2**4 + 1.0316284526
 
 def gomez_levi_c(x):
     maxx = np.array([ 1.0,  1.0])
@@ -387,7 +399,7 @@ def gomez_levi_c(x):
     x2 = x[1]
     c = 2 * np.sin(2*np.pi*x2)**2 - np.sin(4*np.pi*x1) <= 1.5
     if c:
-        return 4*x1**2 - 2.1*x1**4 + x1**6 / 3 + x1*x2 - 4*x2**2 + 4*x2**4 + 1.031628453
+        return 4*x1**2 - 2.1*x1**4 + x1**6 / 3 + x1*x2 - 4*x2**2 + 4*x2**4 + 1.0316284526
     else:
         return np.nan
 
@@ -576,18 +588,27 @@ def scale_from_domain(x, func_name):
     bounds = get_bounds(func_name)
     return (x - bounds[:,0]) / (bounds[:,1] - bounds[:,0])
 
-minimum = {
-    'rosenbrock':np.array([1.,1.]),
-    'rosenbrock_fun_c_1':np.array([1.,1.]),
-    'rosenbrock_fun_c_2':np.array([1.,1.]),
-    'mishra_bird':np.array([-3.1302468,-1.5821422]),
-    'mishra_bird_c':np.array([-3.1302468,-1.5821422]),
-    'mishra_bird_c_disc':np.array([-3.1302468,-1.5821422]),
-    'gomez_levi':np.array([0.08984201, -0.7126564]),
-    'gomez_levi_c':np.array([0.08984201, -0.7126564]),
-    'drop_wave':np.array([0., 0.]),
-    'drop_wave_c':np.array([0., 0.]),
+x_minimum = {
+    'rosenbrock'          : np.array([1.,1.]),
+    'rosenbrock_fun_c_1'  : np.array([1.,1.]),
+    'rosenbrock_fun_c_2'  : np.array([1.,1.]),
+    'mishra_bird'         : np.array([-3.1302468,-1.5821422]),
+    'mishra_bird_c'       : np.array([-3.1302468,-1.5821422]),
+    'mishra_bird_c_disc'  : np.array([-3.1302468,-1.5821422]),
+    'gomez_levi'          : np.array([0.08984201, -0.7126564]),
+    'gomez_levi_c'        : np.array([0.08984201, -0.7126564]),
+    'drop_wave'           : np.array([0., 0.]),
+    'drop_wave_c'         : np.array([0., 0.]),
+    'ackley'              : np.array([0., 0.]),
+    'ackley_ellipse'      : np.array([0., 0.]),
+    'hartmann_3d'         : np.array([0.114614, 0.555649, 0.852547]),
+    'powell_singular'     : np.array([0., 0., 0., 0.]),
+    'colville'            : np.array([1., 1., 1., 1.]),
+    'shekel'              : np.array([4., 4., 4., 4.]),
+    'hartmann_6d'         : np.array([0.201690, 0.150011, 0.476874, 0.275332, 0.311652, 0.657300]),
           }
 
-def get_minimum(func_name): return minimum.get(func_name)
+def get_minimum(func_name): return x_minimum.get(func_name, [0., 0.])
+
+def get_minimum_value(func_name): return 0.
 
