@@ -176,12 +176,12 @@ class ABCBO(ABC):
             if np.isnan(value):
                 if self.debug: print("#   function unfeasible at ",x_new)
                 new_label = 1
-                print("  {0:4d}   {1:>8f}       {2:>8.6e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
+                print("  {0:4d}   {1:>8f}       {2: 7.5e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
             else:
                 new_label, n_feasible = 0, n_feasible + 1
                 self.y_feasible = np.append(self.y_feasible, value)
                 self.x_feasible = np.concatenate((self.x_feasible, x_new))
-                print("  {0:4d}   {1:>8.6e}   {2:>8.6e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
+                print("  {0:4d}   {1: 7.5e}   {2: 7.5e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
             self.y_tot = np.append(self.y_tot, value)
             self.labels = np.append(self.labels, new_label)
             self.gamma = 0.5 / (np.sqrt(self.bounds.shape[0]) * np.var(self.x_tot, axis=0))
@@ -223,11 +223,11 @@ class ABCBO(ABC):
             value = self.f(next_x[0])
             y_min = min(y_min, value)
             if np.isnan(value):
-                print("  {0:4d}   {1:>8f}       {2:>8.6e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
+                print("  {0:4d}   {1:>8f}       {2: 7.5e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
                 new_label = 1
             else:
                 n_feasible += 1
-                print("  {0:4d}   {1:>8.6e}   {2:>8.6e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
+                print("  {0:4d}   {1: 7.5e}   {2: 7.5e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
                 new_label = 0
                 self.y_feasible = np.append(self.y_feasible, value)
                 self.x_feasible = np.concatenate((self.x_feasible, next_x))
@@ -280,12 +280,12 @@ class ABCBO(ABC):
             next_x = res.get("x").reshape(1,-1)
             value = self.f(next_x[0])
             if np.isnan(value):
-                print("  {0:4d}   {1:>8f}       {2:>8.6e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
+                print("  {0:4d}   {1:>8f}       {2: 7.5e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
                 new_label = 1
             else:
                 if value < y_min: x_min, y_min = next_x, value
                 n_feasible += 1
-                print("  {0:4d}   {1:>8.6e}   {2:>8.6e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
+                print("  {0:4d}   {1: 7.5e}   {2: 7.5e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
                 new_label = 0
                 self.y_feasible = np.append(self.y_feasible, value)
                 self.x_feasible = np.concatenate((self.x_feasible, next_x))
