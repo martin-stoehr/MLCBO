@@ -27,15 +27,12 @@ def evaluateEstimatedFeasibility(x, classifier):
 def coverage(x, sampledPoints):
     x = np.array(x)
     sampledPoints = np.array(sampledPoints)
-    var = sampledPoints.var()
-    sigma2, C = 2 * var * var, 0
+    var = sampledPoints.var(axis=0)
+    ## sqrt(n_features) rescales L2 norm in higher dimensions
+    sigma2, C = 2 * var * var * np.sqrt(sampledPoints.shape[1]), 0
     for i in np.arange(0, len(sampledPoints)):
-        C = C + np.exp( -np.sum((x - sampledPoints[i, ]) ** 2) / sigma2 )
+        C = C + np.exp( -np.sum((x - sampledPoints[i, ]) ** 2 / sigma2 ))
     return C
-
-#def boundness(x, classifier):
-#    B = abs(estimate_p_nonfeasible(x, classifier))
-#    return B
 
 def estimate_p_nonfeasible(x, classifier):
     """ Estimated probability of set if x's being non-feasible """
@@ -56,7 +53,6 @@ def estimate_p_nonfeasible(x, classifier):
 
 def phase1AcquisitionFunction(x, args):
     C = coverage(x, args['sampledPoints'])
-#    B = boundness(x, args['classifier'])
     B = estimate_p_nonfeasible(x, args['classifier'])
     value = C + B
     return value
@@ -102,12 +98,28 @@ def NextPointExploration(sampledPoints, classifier, sampler, dimensions_test, n_
     return (np.array([locOptX[ix]]))
 
 
-def acquisition_function_smooth(x, args, beta=1.96):
+def acquisition_function_smooth(x, args, beta=1.):
     """
     Continuous acquisition function based on lower confidence bound (lcb)
     of surrogate and probability of feasibility (p_f):
         lcb = mean(surrogate) - beta * std(surrogate)
         f_acq = p_f * lcb + (1 - p_f) * max( mean(surrogate) )
+    
+    Parameters
+    ----------
+    x: array-like
+        point(s) to evaluate acquisition function on
+    args: dict
+        dictionary containing surrogate model and classifier objects
+    beta: float or array-like, default: 1.0
+        beta*std(surrogate) defines lower confidence bound
+        default: lower confidence bound mu - std
+    
+    Returns
+    -------
+    f_acqu: array-like, shape like x
+        value(s) of acquisition function at x
+    
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -127,7 +139,7 @@ def acquisition_function_smooth(x, args, beta=1.96):
         return f_acq
         
 
-def acquisition_function_binary(x, args, beta=1.96):
+def acquisition_function_binary(x, args, beta=1.):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         model = args["model"]

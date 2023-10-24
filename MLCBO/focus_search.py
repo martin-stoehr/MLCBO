@@ -7,6 +7,8 @@ from .mlcbo_utils import NUMJOBS_OPT
 
 def focus_search(f, args, sampler, bounds, n_restart=3, n_focus=5):
     bounds = args.pop("bounds", np.array([[0.,1.],[0.,1.]]))
+    _ = args.pop("max_iter", 0)
+    n_samples = args.pop("n_samples", 5000)
     cand_points, cand_acq = [], []
     for idx_start in range(n_restart):
         optimal_point = optimal_value = []
@@ -15,7 +17,7 @@ def focus_search(f, args, sampler, bounds, n_restart=3, n_focus=5):
         for iter_n in range(n_focus):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore") 
-                x = np.array(sampler.generate(new_bounds, 5000))
+                x = np.array(sampler.generate(new_bounds, n_samples))
             y = f(x, args)
             x_star = x[np.argmin(y)]
             y_star = np.min(y)
@@ -43,8 +45,9 @@ def focus_search(f, args, sampler, bounds, n_restart=3, n_focus=5):
 
 def focus_search_parallel(f, args, sampler, n_restart=5, n_focus=10):
     bounds = args["bounds"]
-    best_x = args.get('best_x', [])
-    n_samples = args.get('n_samples', 5000)
+    best_x = args.pop('best_x', [])
+    n_samples = args.pop('n_samples', 5000)
+    _ = args.pop("max_iter", 20)
     ##TODO: avoid hard-coded parallelism -> vectorize
     results = Parallel(NUMJOBS_OPT)(
                 delayed(focusing)(
@@ -113,20 +116,20 @@ def focusing(f, bounds, sampler, n_iter, args, n_samples=5000, best_x=[]):
     
 def focus_search_local_opt(f, args, sampler):
     bounds = args.pop("bounds")
+    n_iter = args.pop("max_iter", 20)
     n0_opt = args.pop('n_samples', 100)
     x0_opt = np.array(sampler.generate(bounds, n0_opt))
     ##TODO: avoid hard-coded parallelism -> vectorize
     results = Parallel(NUMJOBS_OPT)(
-                delayed(minimize)(
-                    fun=f,
-                    args=args,
-                    x0=x0,
-                    bounds=bounds,
-                    method='L-BFGS-B',
-                    options={'maxiter':20})
+                    delayed(local_opt)(f, args, bounds, x0, n_iter=n_iter)
                 for x0 in x0_opt)
     x_opts = np.array([r.get('x') for r in results])
     y_opts = np.array([r.get('fun') for r in results])
     next_x = x_opts[np.argmin(y_opts)]
     return next_x.reshape(1,-1)
+
+def local_opt(f, args, bounds, x0, n_iter=20):
+    res = minimize(fun=f, args=args, x0=x0, bounds=bounds,
+                    method='L-BFGS-B', options={'maxiter':n_iter})
+    return res
 

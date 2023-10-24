@@ -9,19 +9,24 @@ from .focus_search import *
 from .flex_classifiers import SVCFlex, GPCFlex
 
 
-sampler_settings = {"lhs"   : {'criterion':'maximin', 'iterations':100},
+sampler_settings = {"lhs"   : {"criterion":"maximin", "iterations":100},
                     "sobol" : {}}
 
 class ABCBO(ABC):
     def __init__(self, f, bounds=[[0, 1], [0, 1]], n_init_grid=10, iter_exploration=60,
                  iter_exploitation=30, surrogate_type="GP", surrogate_kwargs={},
                  surrogate_kernel="RBF", surrogate_kernel_kwargs={}, 
-                 classifier_kwargs={}, sampler='lhs', sampler_kwargs={},
+                 classifier_kwargs={}, sampler="sobol", sampler_kwargs={},
                  log_models=False, noise=None, seed=42, n_focus=10, n_resample=5,
-                 n_init_exploration=32, n_init_exploitation=32, debug=False):
+                 n_init_exploration=32, n_init_exploitation=32,
+                 retrain_classifier_if_feasible=True, debug=False):
         """
         Abstract base class for (bound) Bayesian optimization with constraints from
         ML classifier (active learning framework).
+        
+        vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+        > !TODO: move runtime parameters to subroutines! <
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         
         Parameters
         ----------
@@ -47,7 +52,7 @@ class ABCBO(ABC):
                 keyword arguments for kernel in surrogate model (GP models only)
             classifier_kwargs: dict, default: {}
                 keyword arguments for classifier model
-            sampler: str, default: "lhs"
+            sampler: str, default: "sobol"
                 algorithm for (quasi-)random sampling of search space
                 "lhs": latin hyper cube
                 "sobol": Sobol sequence
@@ -67,6 +72,10 @@ class ABCBO(ABC):
                 number of initial guesses for exploration phase (optimize coverage)
             n_init_exploitation: int, default: 32
                 number of initial guesses for exploitation phase (optimize acquisition function)
+            retrain_classifier_if_feasible: bool or int, default: True
+                retrain the classifier also when encountering feasible points, otherwise
+                only retrain if unfeasible point is encountered
+                if int, retrain every <retrain_classifier_if_feasible> iterations
             debug: bool, default: False
                 flag for more verbose output for each phase
         
@@ -74,7 +83,8 @@ class ABCBO(ABC):
         self.classifier_kwargs = classifier_kwargs
         if surrogate_type == "GP":
             try:
-                self.s_kernel = eval("kernels."+surrogate_kernel+"(**surrogate_kernel_kwargs)")
+                self.s_kernel = eval("kernels."+surrogate_kernel)
+                self.s_kernel_kwargs = surrogate_kernel_kwargs
             except:
                 raise ValueError("`surrogate_kernel` has to be one of `sklearn.gaussian_process.kernels`!")
         self.surrogate_kwargs = surrogate_kwargs
@@ -97,6 +107,15 @@ class ABCBO(ABC):
         sampler_opt = sampler_settings[sampler]
         sampler_opt.update(sampler_kwargs)
         self.sampler = eval(sampler.capitalize() + "(**sampler_opt)")
+        if retrain_classifier_if_feasible:
+            if isinstance(retrain_classifier_if_feasible, bool):
+                self.retrain_classifier_if_feasible = 4
+            elif isinstance(retrain_classifier_if_feasible, int):
+                self.retrain_classifier_if_feasible = retrain_classifier_if_feasible
+            else:
+                raise ValueError("'retrain_classifier_if_feasible' has to be bool or int")
+        else:
+            self.retrain_classifier_if_feasible = np.nan
         self.debug = debug
         
 
@@ -124,11 +143,13 @@ class ABCBO(ABC):
             self.y_tot[i] = value
         self.y_feasible = np.array(self.y_feasible)
         self.x_feasible = np.array(self.x_feasible)
-        ## gamma = 1 / (n_features * Var(x))
-        self.gamma = 1 / (self.bounds.shape[0] * np.var(self.x_tot))
+        ## gamma = 1 / (2 * sqrt(n_features) * Var(x))
+        ## -> length scale = sqrt( sqrt(n_features) * Var(x) )
+        ## sqrt(n_features) rescales L2 norm in higher dimensions
+        self.gamma = 0.5 / (np.sqrt(self.bounds.shape[0]) * np.var(self.x_tot, axis=0))
         self.classifier = self.init_classifier(with_proba=True)
         print("END INITIALIZATION PHASE: Number of feasible points: ", self.y_feasible.size, "/", self.n_init_grid)
-        print('*'*64 + "\n")
+        print("*" * 64 + "\n")
     
     def exploration(self):
         print("*"*20 + " START EXPLORATION PHASE " + "*"*19)
@@ -163,23 +184,24 @@ class ABCBO(ABC):
                 print("  {0:4d}   {1:>8.6e}   {2:>8.6e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
             self.y_tot = np.append(self.y_tot, value)
             self.labels = np.append(self.labels, new_label)
-            self.gamma = 1 / (self.bounds.shape[0] * np.var(self.x_tot))
+            self.gamma = 0.5 / (np.sqrt(self.bounds.shape[0]) * np.var(self.x_tot, axis=0))
             self.classifier = self.init_classifier(with_proba=True)
             self.classifier.fit(self.x_tot, self.labels)
             score = self.classifier.score(self.x_tot, self.labels)
             if self.log_models:
                 self.c_score.append(score)
                 self.classifiers.append(self.classifier)
-        print('*'*21 + " END EXPLORATION PHASE " + '*'*20 + "\n")
+        print("*" * 21 + " END EXPLORATION PHASE " + "*" * 20 + "\n")
     
     def exploitation(self):
         """
         Run Bayesian optimization with on-the-fly updates of SVM estimator for feasible region.
         """
-        print('*'*19 + " START EXPLOITATION PHASE " + '*'*19)
+        print("*" * 19 + " START EXPLOITATION PHASE " + "*" * 19)
         warnings.filterwarnings("ignore")
         if self.surrogate_type == "gp":
-            s_model = GaussianProcessRegressor(kernel=self.s_kernel, **self.surrogate_kwargs)
+            K = self.s_kernel(**self.s_kernel_kwargs)
+            s_model = GaussianProcessRegressor(kernel=K, **self.surrogate_kwargs)
         elif self.surrogate_type == "rf":
             s_model = RandomForestRegressor(**self.surrogate_kwargs)
         else:
@@ -190,9 +212,13 @@ class ABCBO(ABC):
         n_feasible = self.y_feasible.size
         print("  Iter       f(x)           Best      #feasible  Class.Score")
         for i in range(self.iter_exploitation):
+            ## setting sampling-dependent initial guess for length scale
+            ## seems to improve hyperparameter optimization in surrogate model
+            s_model.kernel.set_params(length_scale=np.sqrt(0.5 / self.gamma))
             s_model.fit(self.x_feasible, self.y_feasible)
-            params = {'model':s_model, 'classifier':self.classifier,
-                      'bounds':self.bounds, 'n_sampling':self.n_init_exploitation}
+            params = {"model":s_model, "classifier":self.classifier,
+                      "bounds":self.bounds, "n_sampling":self.n_init_exploitation,
+                      "max_iter":20}
             next_x = self.exploitation_search(f=self.acquisition_func, args=params, sampler=self.sampler)
             value = self.f(next_x[0])
             y_min = min(y_min, value)
@@ -205,14 +231,12 @@ class ABCBO(ABC):
                 new_label = 0
                 self.y_feasible = np.append(self.y_feasible, value)
                 self.x_feasible = np.concatenate((self.x_feasible, next_x))
-            ### Add classification label new point
             self.x_tot = np.concatenate((self.x_tot, next_x))
             self.labels = np.append(self.labels, new_label)
             
-            ### Update surrogate model every 4 iterations (make this a parameter?)
-            ### or in case unfeasible point sampled!
-            if np.isnan(value) or (i%4 == 0):
-                self.gamma = 1 / (self.bounds.shape[0] * np.var(self.x_tot))
+            ### Update surrogate model every n iterations or if point unfeasible!
+            if np.isnan(value) or (i%self.retrain_classifier_if_feasible == 0):
+                self.gamma = 0.5 / (np.sqrt(self.bounds.shape[0]) * np.var(self.x_tot, axis=0))
                 self.classifier = self.init_classifier()
                 self.classifier.fit(self.x_tot, self.labels)
                 score = self.classifier.score(self.x_tot, self.labels)
@@ -221,21 +245,89 @@ class ABCBO(ABC):
                 self.surrogates.append(s_model)
                 self.classifiers.append(self.classifier)
             self.y_tot = np.append(self.y_tot, value)
-        print('*' * 20 + "END EXPLOITATION PHASE" + '*' * 20 + "\n")
+        print("*" * 20 + " END EXPLOITATION PHASE " + "*" * 20 + "\n")
         self.surrogate = s_model
     
-    ## Generate results of experiment
+    def post_optimize(self, n_restarts=20, n_opt=200):
+        """
+        Post-optimize with tighter threshold and increased number of steps on
+        surrogate surface starting from current best estimate for minimum.
+        Targeted sampling improves surrogate model around estimated minimum.
+        
+        Parameters
+        ----------
+            n_restarts: int, default: 20
+                number of restarts
+            n_opt: int, default: 200
+                maximum number of steps in local optimization runs
+        
+        """
+        print("*" * 17 + " START POST-OPTIMIZATION PHASE " + "*" * 16)
+        min_idx = np.argmin(self.y_feasible)
+        x_min = self.x_feasible[min_idx]
+        y_min = self.y_feasible[min_idx]
+        n_feasible = self.y_feasible.size
+        for i in range(n_restarts):
+            self.surrogate.kernel.set_params(length_scale=np.sqrt(0.5 / self.gamma))
+            self.surrogate.fit(self.x_feasible, self.y_feasible)
+            self.gamma = 0.5 / (np.sqrt(self.bounds.shape[0]) * np.var(self.x_tot, axis=0))
+            self.classifier = self.init_classifier()
+            self.classifier.fit(self.x_tot, self.labels)
+            score = self.classifier.score(self.x_tot, self.labels)
+            
+            params = {"model":self.surrogate, "classifier":self.classifier}
+            res = local_opt(self.acquisition_func, params, self.bounds, x_min, n_iter=n_opt)
+            next_x = res.get("x").reshape(1,-1)
+            value = self.f(next_x[0])
+            if np.isnan(value):
+                print("  {0:4d}   {1:>8f}       {2:>8.6e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
+                new_label = 1
+            else:
+                if value < y_min: x_min, y_min = next_x, value
+                n_feasible += 1
+                print("  {0:4d}   {1:>8.6e}   {2:>8.6e}   {3:5d}        {4:>5.3f}".format(i+1,value,y_min,n_feasible,score))
+                new_label = 0
+                self.y_feasible = np.append(self.y_feasible, value)
+                self.x_feasible = np.concatenate((self.x_feasible, next_x))
+            self.x_tot = np.concatenate((self.x_tot, next_x))
+            self.labels = np.append(self.labels, new_label)
+        print("*" * 18 + " END POST-OPTIMIZATION PHASE " + "*" * 17 + "\n")
+        
     def generate_result(self):
+        """
+        Generate result
+        
+        Returns
+        -------
+            res: dict containing
+                'x':    current best estimate of location of minimum
+                'fun':  value at current estimate for minimum
+                'xs':   all x sampled
+                'funs': all corresponding function values
+                'xs_feasible':   all x found in feasible region
+                'funs_feasible': corresponding function values
+        
+        """
         min_idx = np.argmin(self.y_feasible)
         x = self.x_feasible[min_idx]
         fun = self.y_feasible[min_idx]
-        return {"x": x, "fun": fun, "xs": self.x_tot, "funs": self.y_tot, "xs_feasible": self.x_feasible,
-                "funs_feasible": self.y_feasible}
+        res = {"x":x, "fun":fun, "xs":self.x_tot, "funs":self.y_tot, "xs_feasible":self.x_feasible,
+               "funs_feasible":self.y_feasible}
+        return res
 
-    ## Generate gap metric for check the progress of the optimizer into optimization process
     def gap_metric(self, optimum_value=0):
-        current_opt = np.nanmin(self.y_tot[0:self.n_init_grid])
-        init_opt = np.nanmin(self.y_tot[0:self.n_init_grid])
+        """
+        Generate gap metric along optimization process defined by
+            |current min(f) - init min(f)| / |reference min(f) - init min(f)|
+        where init min(f) is the minimum from the initial (quasi-)random sampling
+        
+        Returns
+        -------
+            gap_metric: array-like
+                gap_metric as defined above for each iteration
+        
+        """
+        init_opt = current_opt = np.nanmin(self.y_tot[0:self.n_init_grid])
         gap_metric = []
         for i in range(0, len(self.y_tot)):
             current_opt = min(current_opt, self.y_tot[i])
@@ -251,10 +343,10 @@ class GPCBO(ABCBO):
                  iter_exploitation=30, surrogate_type="GP", surrogate_kwargs={},
                  surrogate_kernel="RBF", surrogate_kernel_kwargs={},
                  classifier_kwargs={}, classifier_kernel="RBF",
-                 classifier_kernel_kwargs={}, sampler='lhs', sampler_kwargs={},
+                 classifier_kernel_kwargs={}, sampler="sobol", sampler_kwargs={},
                  log_models=False, noise=None, seed=42, n_init_exploration=32,
-                 n_init_exploitation=32, smooth_acquisition=True, local_opt=True,
-                 debug=False):
+                 n_init_exploitation=32, retrain_classifier_if_feasible=True,
+                 smooth_acquisition=True, local_opt=True, debug=False):
         """
         Bayesian Optimization with constraints from Gaussian process classifier.
         
@@ -286,7 +378,7 @@ class GPCBO(ABCBO):
                 kernel for GP classifier
             classifier_kernel_kwargs: dict, default: {}
                 keyword arguments for kernel in GP classifier
-            sampler: str, default: "lhs"
+            sampler: str, default: "sobol"
                 algorithm for (quasi-)random sampling of search space
                 "lhs": latin hyper cube
                 "sobol": Sobol sequence
@@ -306,6 +398,10 @@ class GPCBO(ABCBO):
                 number of initial guesses for exploration phase (optimize coverage)
             n_init_exploitation: int, default: 32
                 number of initial guesses for exploitation phase (optimize acquisition function)
+            retrain_classifier_if_feasible: bool or int, default: True
+                retrain the classifier also when encountering feasible points, otherwise
+                only retrain if unfeasible point is encountered
+                if int, retrain every <retrain_classifier_if_feasible> iterations
             smooth_acquisition: bool, default: True
                 whether to smoothly interpolate acquisition function at estimated
                 boundaries (i.e., use probability of feasibility before decision function)
@@ -323,7 +419,9 @@ class GPCBO(ABCBO):
                 classifier_kwargs=classifier_kwargs, sampler=sampler,
                 sampler_kwargs=sampler_kwargs, log_models=log_models,
                 noise=noise, seed=seed, n_init_exploration=n_init_exploration,
-                n_init_exploitation=n_init_exploitation, debug=debug)
+                n_init_exploitation=n_init_exploitation,
+                retrain_classifier_if_feasible=retrain_classifier_if_feasible,
+                debug=debug)
         try:
             self.c_kernel = eval("kernels."+classifier_kernel)
             self.c_kernel_opt = classifier_kernel_kwargs
@@ -340,7 +438,11 @@ class GPCBO(ABCBO):
             
 
     def init_classifier(self, **kwargs):
-        return GPCFlex(kernel=self.c_kernel(**self.c_kernel_opt),
+        return GPCFlex(kernel=self.c_kernel(length_scale=1./np.sqrt(self.bounds.shape[0]), **self.c_kernel_opt),
+                       ## let sklearn's hyperparameter optimization figure out the length scale
+                       ## sampling-dependent initial guess seems to hinder optimization
+                       ## (lack of connection between input and output variance for binary classifier!)
+                       #length_scale=np.sqrt(0.5 / self.gamma), **self.c_kernel_opt),
                        **self.classifier_kwargs)
     
 
@@ -348,9 +450,10 @@ class SVMCBO(ABCBO):
     def __init__(self, f, bounds=[[0, 1], [0, 1]], n_init_grid=10, iter_exploration=60,
                  iter_exploitation=30, surrogate_type="GP", surrogate_kwargs={},
                  surrogate_kernel="RBF", surrogate_kernel_kwargs={},
-                 classifier_kwargs={}, sampler='lhs', sampler_kwargs={},
+                 classifier_kwargs={}, sampler="sobol", sampler_kwargs={},
                  log_models=False, noise=None, seed=42, n_init_exploration=32,
-                 n_init_exploitation=1000, debug=False):
+                 n_init_exploitation=1000, retrain_classifier_if_feasible=True,
+                 debug=False):
         """
         Bayesian optimization with constraints from support vector machine classifier.
         
@@ -378,7 +481,7 @@ class SVMCBO(ABCBO):
                 keyword arguments for kernel in surrogate model (GP models only)
             classifier_kwargs: dict, default: {}
                 keyword arguments for classifier model
-            sampler: str, default: "lhs"
+            sampler: str, default: "sobol"
                 algorithm for (quasi-)random sampling of search space
                 "lhs": latin hyper cube
                 "sobol": Sobol sequence
@@ -398,6 +501,10 @@ class SVMCBO(ABCBO):
                 number of initial guesses for exploration phase (optimize coverage)
             n_init_exploitation: int, default: 32
                 number of initial guesses for exploitation phase (optimize acquisition function)
+            retrain_classifier_if_feasible: bool or int, default: True
+                retrain the classifier also when encountering feasible points, otherwise
+                only retrain if unfeasible point is encountered
+                if int, retrain every <retrain_classifier_if_feasible> iterations
             debug: bool, default: False
                 flag for more verbose output for each phase
         
@@ -409,7 +516,9 @@ class SVMCBO(ABCBO):
                 classifier_kwargs=classifier_kwargs, sampler=sampler,
                 sampler_kwargs=sampler_kwargs, log_models=log_models,
                 noise=noise, seed=seed, n_init_exploration=n_init_exploration,
-                n_init_exploitation=n_init_exploitation, debug=debug)
+                n_init_exploitation=n_init_exploitation,
+                retrain_classifier_if_feasible=retrain_classifier_if_feasible,
+                debug=debug)
         self.acquisition_func = acquisition_function_binary
         self.exploitation_search = focus_search_parallel
     
