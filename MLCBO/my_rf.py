@@ -353,7 +353,7 @@ class ExtraTreesRegressor(_sk_ExtraTreesRegressor):
            ``min_impurity_split`` has changed from 1e-7 to 0 in 0.23 and it
            will be removed in 0.25. Use ``min_impurity_decrease`` instead.
 
-    bootstrap : bool, default=False
+    bootstrap : bool, default=True
         Whether bootstrap samples are used when building trees. If False, the
         whole dataset is used to build each tree.
 
